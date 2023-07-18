@@ -2,21 +2,32 @@
 pragma solidity ^0.8.19;
 
 import "./MerkleTree.sol";
-import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
+import "../circuits/circuit-swap/contract/plonk_vk.sol";
+import "openzeppelin/token/ERC20/IERC20.sol";
+import "openzeppelin/security/ReentrancyGuard.sol";
 
 interface IVerifier {
-    function verifyProof(
-        bytes memory _proof,
-        uint256[6] memory _input
-    ) external returns (bool);
+    function verify(
+        bytes calldata _proof,
+        bytes32[] calldata _publicInputs
+    ) external view returns (bool);
 }
 
-abstract contract Tornado is MerkleTreeWithHistory, ReentrancyGuard {
-    IVerifier public immutable verifier;
-    uint256 public denomination;
+abstract contract ZKSwap is MerkleTreeWithHistory, ReentrancyGuard {
+    enum NodeStatus {
+        Available,
+        Traded,
+        Withdrew
+    }
 
-    mapping(bytes32 => bool) public nullifierHashes;
-    // we store all commitments just to prevent accidental deposits with the same commitment
+    // verifiers
+    IVerifier public immutable depositVerifier;
+    IVerifier public immutable swapVerifier;
+    IVerifier public immutable finalizeVerifier;
+    IVerifier public immutable withdrawVerifier;
+
+    mapping(bytes32 => NodeStatus) public statusPool;
+    // for checking collisions
     mapping(bytes32 => bool) public commitments;
 
     event Deposit(
@@ -24,6 +35,7 @@ abstract contract Tornado is MerkleTreeWithHistory, ReentrancyGuard {
         uint32 leafIndex,
         uint256 timestamp
     );
+
     event Withdrawal(
         address to,
         bytes32 nullifierHash,
@@ -33,20 +45,21 @@ abstract contract Tornado is MerkleTreeWithHistory, ReentrancyGuard {
 
     /**
     @dev The constructor
-    @param _verifier the address of SNARK verifier for this contract
     @param _hasher the address of MiMC hash contract
-    @param _denomination transfer amount for each deposit
     @param _merkleTreeHeight the height of deposits' Merkle Tree
   */
     constructor(
-        IVerifier _verifier,
+        IVerifier _depositVerifier,
+        IVerifier _swapVerifier,
+        IVerifier _finalizeVerifier,
+        IVerifier _withdrawVerifier,
         IHasher _hasher,
-        uint256 _denomination,
         uint32 _merkleTreeHeight
     ) MerkleTreeWithHistory(_merkleTreeHeight, _hasher) {
-        require(_denomination > 0, "denomination should be greater than 0");
-        verifier = _verifier;
-        denomination = _denomination;
+        depositVerifier = _depositVerifier; // Assigning the value of `_deposit_verifier` to a variable `depositVerifier`
+        swapVerifier = _swapVerifier; // Assigning the value of `_swap_verifier` to a variable `swapVerifier`
+        finalizeVerifier = _finalizeVerifier; // Assigning the value of `_finalize_verifier` to a variable `finalizeVerifier`
+        withdrawVerifier = _withdrawVerifier;
     }
 
     /**
@@ -83,14 +96,13 @@ abstract contract Tornado is MerkleTreeWithHistory, ReentrancyGuard {
         uint256 _fee,
         uint256 _refund
     ) external payable nonReentrant {
-        require(_fee <= denomination, "Fee exceeds transfer value");
         require(
-            !nullifierHashes[_nullifierHash],
+            statusPool[_nullifierHash] == NodeStatus.Available,
             "The note has been already spent"
         );
         require(isKnownRoot(_root), "Cannot find your merkle root"); // Make sure to use a recent one
         require(
-            verifier.verifyProof(
+            withdrawVerifier.verify(
                 _proof,
                 [
                     uint256(_root),
@@ -104,7 +116,7 @@ abstract contract Tornado is MerkleTreeWithHistory, ReentrancyGuard {
             "Invalid withdraw proof"
         );
 
-        nullifierHashes[_nullifierHash] = true;
+        statusPool[_nullifierHash] = NodeStatus.Withdrew;
         _processWithdraw(_recipient, _relayer, _fee, _refund);
         emit Withdrawal(_recipient, _nullifierHash, _relayer, _fee);
     }
@@ -117,20 +129,20 @@ abstract contract Tornado is MerkleTreeWithHistory, ReentrancyGuard {
         uint256 _refund
     ) internal virtual;
 
-    /** @dev whether a note is already spent */
-    function isSpent(bytes32 _nullifierHash) public view returns (bool) {
-        return nullifierHashes[_nullifierHash];
-    }
+    // /** @dev whether a note is already spent */
+    // function isSpent(bytes32 _nullifierHash) public view returns (bool) {
+    //     return nullifierHashes[_nullifierHash];
+    // }
 
-    /** @dev whether an array of notes is already spent */
-    function isSpentArray(
-        bytes32[] calldata _nullifierHashes
-    ) external view returns (bool[] memory spent) {
-        spent = new bool[](_nullifierHashes.length);
-        for (uint256 i = 0; i < _nullifierHashes.length; i++) {
-            if (isSpent(_nullifierHashes[i])) {
-                spent[i] = true;
-            }
-        }
-    }
+    // /** @dev whether an array of notes is already spent */
+    // function isSpentArray(
+    //     bytes32[] calldata _nullifierHashes
+    // ) external view returns (bool[] memory spent) {
+    //     spent = new bool[](_nullifierHashes.length);
+    //     for (uint256 i = 0; i < _nullifierHashes.length; i++) {
+    //         if (isSpent(_nullifierHashes[i])) {
+    //             spent[i] = true;
+    //         }
+    //     }
+    // }
 }
