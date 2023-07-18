@@ -20,8 +20,10 @@ abstract contract ZKSwap is MerkleTreeWithHistory, ReentrancyGuard {
         Withdrew
     }
 
+    //
     struct Trade {
-        bool direction;
+        address fromToken;
+        address toToken;
         uint256 from;
         uint256 to;
     }
@@ -33,8 +35,7 @@ abstract contract ZKSwap is MerkleTreeWithHistory, ReentrancyGuard {
     IVerifier public immutable withdrawVerifier;
 
     mapping(bytes32 => NodeStatus) public statusPool;
-    // for checking collisions
-    mapping(bytes32 => bool) public commitments;
+    mapping(bytes32 => bool) public commitments; // for checking collisions
     mapping(uint256 => Trade) public trades;
 
     event Deposit(
@@ -89,6 +90,8 @@ abstract contract ZKSwap is MerkleTreeWithHistory, ReentrancyGuard {
     function swap(
         bytes calldata _proof,
         bool _direction,
+        address _fromToken,
+        address _toToken,
         uint32 _amount
     ) external returns (uint32 tradeId) {}
 
