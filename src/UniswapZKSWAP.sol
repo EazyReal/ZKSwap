@@ -4,6 +4,7 @@ pragma solidity ^0.8.19;
 import "./ZKSwap.sol";
 import "openzeppelin/token/ERC20/IERC20.sol";
 import "openzeppelin/token/ERC20/utils/SafeERC20.sol";
+import "@uniswap/v3-periphery/contracts/interfaces/ISwapRouter.sol";
 
 contract ERC20ZKSwap is ZKSwap {
     using SafeERC20 for IERC20;
@@ -15,7 +16,7 @@ contract ERC20ZKSwap is ZKSwap {
         uint256 _denomination,
         uint32 _merkleTreeHeight,
         IERC20 _token
-    ) Tornado(_verifier, _hasher, _denomination, _merkleTreeHeight) {
+    ) ZKSwap(_verifier, _hasher, _denomination, _merkleTreeHeight) {
         token = _token;
     }
 
@@ -24,7 +25,7 @@ contract ERC20ZKSwap is ZKSwap {
             msg.value == 0,
             "ETH value is supposed to be 0 for ERC20 instance"
         );
-        token.safeTransferFrom(msg.sender, address(this), denomination);
+        token.safeTransferFrom(msg.sender, address(this), 0);
     }
 
     function _processWithdraw(
@@ -38,7 +39,7 @@ contract ERC20ZKSwap is ZKSwap {
             "Incorrect refund amount received by the contract"
         );
 
-        token.safeTransfer(_recipient, denomination - _fee);
+        token.safeTransfer(_recipient, 0);
         if (_fee > 0) {
             token.safeTransfer(_relayer, _fee);
         }

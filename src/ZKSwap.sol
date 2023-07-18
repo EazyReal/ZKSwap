@@ -20,6 +20,12 @@ abstract contract ZKSwap is MerkleTreeWithHistory, ReentrancyGuard {
         Withdrew
     }
 
+    struct Trade {
+        bool direction;
+        uint256 from;
+        uint256 to;
+    }
+
     // verifiers
     IVerifier public immutable depositVerifier;
     IVerifier public immutable swapVerifier;
@@ -29,6 +35,7 @@ abstract contract ZKSwap is MerkleTreeWithHistory, ReentrancyGuard {
     mapping(bytes32 => NodeStatus) public statusPool;
     // for checking collisions
     mapping(bytes32 => bool) public commitments;
+    mapping(uint256 => Trade) public trades;
 
     event Deposit(
         bytes32 indexed commitment,
@@ -79,6 +86,20 @@ abstract contract ZKSwap is MerkleTreeWithHistory, ReentrancyGuard {
     /** @dev this function is defined in a child contract */
     function _processDeposit() internal virtual;
 
+    function swap(
+        bytes calldata _proof,
+        bool _direction,
+        uint32 _amount
+    ) external returns (uint32 tradeId) {}
+
+    function finalizeSwap(
+        bytes calldata _proof,
+        bytes32 _nullifierHash,
+        bytes32 _commitment,
+        uint32 _amount,
+        uint32 _tradeId
+    ) external {}
+
     /**
     @dev Withdraw a deposit from the contract. `proof` is a zkSNARK proof data, and input is an array of circuit public inputs
     `input` array consists of:
@@ -104,14 +125,16 @@ abstract contract ZKSwap is MerkleTreeWithHistory, ReentrancyGuard {
         require(
             withdrawVerifier.verify(
                 _proof,
-                [
-                    uint256(_root),
-                    uint256(_nullifierHash),
-                    uint256(_recipient),
-                    uint256(_relayer),
-                    _fee,
-                    _refund
-                ]
+                _toDynamicArray6(
+                    [
+                        _root,
+                        _nullifierHash,
+                        bytes32(uint256(uint160(address(_recipient))) << 96),
+                        bytes32(uint256(uint160(address(_relayer))) << 96),
+                        bytes32(_fee),
+                        bytes32(_refund)
+                    ]
+                )
             ),
             "Invalid withdraw proof"
         );
@@ -128,6 +151,19 @@ abstract contract ZKSwap is MerkleTreeWithHistory, ReentrancyGuard {
         uint256 _fee,
         uint256 _refund
     ) internal virtual;
+
+    //** @dev convert to dynamic array */
+    function _toDynamicArray6(
+        bytes32[6] memory fixedArray
+    ) internal pure returns (bytes32[] memory) {
+        bytes32[] memory dynamicArray = new bytes32[](fixedArray.length);
+
+        for (uint i = 0; i < fixedArray.length; i++) {
+            dynamicArray[i] = fixedArray[i];
+        }
+
+        return dynamicArray;
+    }
 
     // /** @dev whether a note is already spent */
     // function isSpent(bytes32 _nullifierHash) public view returns (bool) {
